@@ -287,3 +287,31 @@ def test_clean_binding_removes_merge_leftovers(workspace, fgroot):
     assert b.text("script")  # reliquat du binding global fusionné
     xml = binding_to_xml(b)
     assert "script" not in xml and "gear-down" in xml
+
+
+def test_scancodes_follow_physical_position():
+    from fgkeybinds.core.layouts import live_layer, scancode_map
+
+    lay = {l.id: l for l in builtin_layouts()}
+    az, us, uk = scancode_map(lay["azerty_fr"]), scancode_map(lay["qwerty_us"]), scancode_map(lay["qwerty_uk"])
+    # même position physique (0x10), caractère différent selon la disposition
+    assert lay["azerty_fr"].key(az[0x10]).base == "a"
+    assert lay["qwerty_us"].key(us[0x10]).base == "q"
+    # touches propres à l'ISO / à l'ANSI
+    assert lay["azerty_fr"].key(az[0x56]).base == "<"
+    assert lay["qwerty_us"].key(us[0x2B]).base == "\\"
+    assert lay["qwerty_uk"].key(uk[0x2B]).base == "#"
+    # pavé numérique (non étendu) ≠ bloc de navigation (étendu)
+    assert az[0x47] == "KP7" and az[0x147] == "HOME"
+    assert az[0x11C] == "KPENT" and az[0x1C] == "ENTER"
+    # toutes les touches du dessin ont un code de balayage
+    for l in lay.values():
+        m = scancode_map(l)
+        missing = {k.id for k in l.keys} - set(m.values())
+        assert not missing, (l.id, missing)
+    # couche affichée selon les modificateurs tenus
+    assert live_layer({"LSHIFT"}, True) == "shift"
+    assert live_layer({"LCTRL", "RALT"}, True) == "altgr"  # AltGr = faux Ctrl + Alt droit
+    assert live_layer({"RALT"}, False) == "alt"  # pas d'AltGr en QWERTY US
+    assert live_layer({"LCTRL", "RSHIFT"}, True) == "ctrl+shift"
+    assert live_layer(set(), True) is None

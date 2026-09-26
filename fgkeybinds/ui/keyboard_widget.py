@@ -88,6 +88,7 @@ class KeyboardWidget(QWidget):
         self.highlight: set[str] = set()
         self.dim_unhighlighted = False
         self.hover: Optional[str] = None
+        self.pressed: set[str] = set()  # touches physiquement enfoncées
         self._visuals: dict[str, KeyVisual] = {}
         self.setMouseTracking(True)
         self.setMinimumSize(760, 250)
@@ -109,6 +110,11 @@ class KeyboardWidget(QWidget):
         self.highlight = ids
         self.dim_unhighlighted = dim_others and bool(ids)
         self.update()
+
+    def set_pressed(self, ids: set[str]) -> None:
+        if ids != self.pressed:
+            self.pressed = set(ids)
+            self.update()
 
     def visual(self, kid: str) -> Optional[KeyVisual]:
         return self._visuals.get(kid)
@@ -132,8 +138,11 @@ class KeyboardWidget(QWidget):
         combo = combo_label(ki.code, ki.mask)
         r = self.kb.resolve(ki.code, ki.mask)
         s = r.slot
+        # AltGr (= Ctrl+Alt sous Windows) sert à produire le caractère : FlightGear ignore
+        # alors Ctrl et Alt, ce qui est le comportement voulu et non un repli.
+        fallback = r.fallback and self.layer != "altgr"
         if s is not None and s.live_press:
-            return KeyVisual(s.origin, glyph, s.description(), combo, r.fallback, ki.code, ki.mask)
+            return KeyVisual(s.origin, glyph, s.description(), combo, fallback, ki.code, ki.mask)
         if s is not None and s.is_disabled and not r.fallback:
             return KeyVisual("disabled", glyph, "Désactivé par l'aéronef", combo, False, ki.code, ki.mask)
         # binding uniquement au relâchement ?
@@ -231,7 +240,11 @@ class KeyboardWidget(QWidget):
             self._paint_key(p, k, vis, unit, glyph_font, small_font, tiny_font, fm_small)
 
     def _paint_key(self, p, k, vis, unit, glyph_font, small_font, tiny_font, fm_small) -> None:
+        pressed = k.id in self.pressed
         path = self.key_path(k)
+        if pressed:
+            # effet d'enfoncement : la touche descend légèrement
+            path.translate(0, unit * 0.03)
         rect = path.boundingRect()
         base = QColor(theme.ORIGIN_COLORS.get(vis.origin, theme.ORIGIN_COLORS["none"]))
         active_mod = k.id in MOD_KEY_LAYERS and self.layer in MOD_KEY_LAYERS[k.id]
@@ -245,11 +258,21 @@ class KeyboardWidget(QWidget):
             base.setAlpha(55)
         if k.id == self.hover:
             base = base.lighter(125)
+        if pressed:
+            glow = QColor(theme.GREEN)
+            for i, a in ((5, 40), (3, 70), (1.5, 110)):
+                glow.setAlpha(a)
+                p.setPen(QPen(glow, unit * 0.04 * i))
+                p.setBrush(Qt.NoBrush)
+                p.drawPath(path)
+            base = QColor(base).lighter(150)
         grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
         grad.setColorAt(0.0, base.lighter(118))
         grad.setColorAt(1.0, base.darker(118))
         p.setBrush(QBrush(grad))
-        if k.id == self.selected:
+        if pressed:
+            pen = QPen(QColor(theme.GREEN), max(2.5, unit * 0.06))
+        elif k.id == self.selected:
             pen = QPen(QColor(theme.ACCENT), max(2.0, unit * 0.05))
         elif k.id in self.highlight:
             pen = QPen(QColor(theme.YELLOW), max(2.0, unit * 0.05))
