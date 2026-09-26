@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QFontMetricsF, QPainter
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
+    QGraphicsDropShadowEffect,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -32,6 +35,7 @@ from . import ops, theme
 from .capture import JoystickCaptureDialog
 from .curve_editor import CurveDialog, CurveWidget
 from .device_art import DeviceArt
+from .keyboard_widget import wrap_elide
 from .state import AppState
 
 
@@ -98,6 +102,19 @@ class FlowLayout(QLayout):
         return y + line_h - rect.y() + m.bottom()
 
 
+class FlowHolder(QWidget):
+    """Conteneur d'un FlowLayout qui réserve la hauteur nécessaire à toutes ses rangées
+    (QScrollArea ne tient pas compte de heightForWidth)."""
+
+    def resizeEvent(self, ev) -> None:  # noqa: N802
+        super().resizeEvent(ev)
+        lay = self.layout()
+        if lay is not None:
+            h = lay.heightForWidth(self.width())
+            if h != self.minimumHeight():
+                self.setMinimumHeight(h)
+
+
 class ButtonTile(QFrame):
     clicked = Signal(int)
     menuRequested = Signal(int, QPoint)
@@ -113,22 +130,38 @@ class ButtonTile(QFrame):
         lay.setSpacing(1)
         self.num = QLabel(f"Bouton {index}")
         self.num.setStyleSheet("font-weight:700; background: transparent;")
-        self.txt = QLabel(text or "—")
+        self.txt = QLabel()
         self.txt.setWordWrap(True)
+        f = self.txt.font()
+        f.setPointSizeF(8.5)
+        lines = wrap_elide(text or "—", QFontMetricsF(f), 150 - 18, 2)
+        self.txt.setText(chr(10).join(lines))
         self.txt.setStyleSheet(f"color: {'white' if bound else theme.MUTED}; font-size: 8.5pt; background: transparent;")
         lay.addWidget(self.num)
         lay.addWidget(self.txt, 1)
         self.setToolTip(text or "Libre — cliquez pour assigner une action")
+        self._on: Optional[bool] = None
+        self.glow = QGraphicsDropShadowEffect(self)
+        self.glow.setOffset(0, 0)
+        self.glow.setBlurRadius(26)
+        self.glow.setColor(QColor(theme.GREEN))
+        self.glow.setEnabled(False)
+        self.setGraphicsEffect(self.glow)
         self.set_pressed(False)
 
     def set_pressed(self, on: bool) -> None:
+        if on == self._on:
+            return  # évite de recalculer le style à chaque lecture (25 fois par seconde)
+        self._on = on
         if on:
-            bg, border = "#1f5a33", theme.GREEN
+            bg, border, width = "#1f6a3a", theme.GREEN, 2
         elif self.bound:
-            bg, border = "#23466f", "#2f6fc4"
+            bg, border, width = "#23466f", "#2f6fc4", 1
         else:
-            bg, border = theme.CARD, theme.BORDER
-        self.setStyleSheet(f"ButtonTile {{ background: {bg}; border: 1px solid {border}; border-radius: 7px; }}")
+            bg, border, width = theme.CARD, theme.BORDER, 1
+        self.setStyleSheet(f"ButtonTile {{ background: {bg}; border: {width}px solid {border};"
+                           f" border-radius: 7px; }}")
+        self.glow.setEnabled(on)
 
     def mousePressEvent(self, ev) -> None:  # noqa: N802
         if ev.button() == Qt.LeftButton:
@@ -222,10 +255,30 @@ class AxisRow(QFrame):
         lay.addWidget(b2)
         b1.clicked.connect(lambda: self.editRequested.emit(self.index))
         b2.clicked.connect(lambda: self.curveRequested.emit(self.index))
+        self._last: Optional[float] = None
+        self._active = False
+        self._calm = QTimer(self)
+        self._calm.setSingleShot(True)
+        self._calm.setInterval(450)
+        self._calm.timeout.connect(lambda: self._set_active(False))
 
     def set_value(self, v: Optional[float]) -> None:
         self.bar.set_value(v)
         self.mini.set_live(v)
+        if v is not None and self._last is not None and abs(v - self._last) > 0.02:
+            self._set_active(True)
+            self._calm.start()
+        self._last = v
+
+    def _set_active(self, on: bool) -> None:
+        if on == self._active:
+            return
+        self._active = on
+        if on:
+            self.setStyleSheet(f"AxisRow {{ background: #1c3a2a; border: 2px solid {theme.GREEN};"
+                               f" border-radius: 8px; }}")
+        else:
+            self.setStyleSheet("")
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +294,9 @@ class DevicesPage(QWidget):
         self.mode = ""
         self.axis_rows: dict[int, AxisRow] = {}
         self.tiles: dict[int, ButtonTile] = {}
+        self._prev: dict[int, js.DeviceState] = {}  # dernier état lu de chaque périphérique
+        self._activity: dict[int, float] = {}  # instant de la dernière activité
+        self._marked: dict[int, bool] = {}  # périphériques signalés actifs dans la liste
 
         root = QHBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -266,14 +322,30 @@ class DevicesPage(QWidget):
         split.addWidget(left)
 
         # détail
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(8, 0, 0, 0)
+        bar = QHBoxLayout()
+        self.banner = QLabel()
+        self.banner.setTextFormat(Qt.RichText)
+        self.banner.setStyleSheet(f"background: {theme.CARD}; border: 1px solid {theme.BORDER};"
+                                  f" border-radius: 6px; padding: 7px 12px;")
+        bar.addWidget(self.banner, 1)
+        self.follow = QCheckBox("Afficher le périphérique utilisé")
+        self.follow.setToolTip("Quand vous appuyez sur un bouton d'un autre périphérique branché, "
+                               "celui-ci est affiché automatiquement.")
+        self.follow.setChecked(state.settings.follow_active_device)
+        bar.addWidget(self.follow)
+        rl.addLayout(bar)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.NoFrame)
         self.detail = QWidget()
         self.scroll.setWidget(self.detail)
         self.dl = QVBoxLayout(self.detail)
-        self.dl.setContentsMargins(8, 0, 8, 8)
-        split.addWidget(self.scroll)
+        self.dl.setContentsMargins(0, 0, 8, 8)
+        rl.addWidget(self.scroll, 1)
+        split.addWidget(right)
         split.setSizes([330, 1000])
 
         self.timer = QTimer(self)
@@ -285,11 +357,14 @@ class DevicesPage(QWidget):
         state.devicesChanged.connect(self._reload_keep)
         state.dataChanged.connect(self._reload_keep)
         state.navigateControl.connect(self.show_control)
+        self.follow.toggled.connect(self._follow_toggled)
+        self._reset_banner()
         self._fill_tree()
         self._select_first()
 
     # -- liste ---------------------------------------------------------------
     def _fill_tree(self) -> None:
+        self._marked = {}
         q = self.filter.text().strip().lower()
         self.tree.blockSignals(True)
         self.tree.clear()
@@ -348,12 +423,14 @@ class DevicesPage(QWidget):
             self._show(None, None, "")
 
     def _detect(self) -> None:
+        self._prev = {}
         self.state.ws.reload_joysticks()
         self.state.devicesChanged.emit()
         n = len(self.state.ws.devices)
         self.state.status.emit(f"{n} périphérique(s) détecté(s).")
 
     def _reload_keep(self) -> None:
+        self._reset_banner()
         cur = self.tree.currentItem()
         key = cur.data(0, Qt.UserRole) if cur else None
         self._fill_tree()
@@ -421,7 +498,6 @@ class DevicesPage(QWidget):
                 self._drop_layout(it.layout())
 
     def _show(self, cfg: Optional[js.JoystickConfig], dev: Optional[js.Device], mode: str) -> None:
-        self.timer.stop()
         self._clear_detail()
         self.cfg, self.device, self.mode = cfg, dev, mode
         if cfg is None and dev is None:
@@ -526,7 +602,7 @@ class DevicesPage(QWidget):
         bt_title = QLabel("Boutons")
         bt_title.setStyleSheet("font-size: 12pt; font-weight: 700; margin-top: 8px;")
         self.dl.addWidget(bt_title)
-        holder = QWidget()
+        holder = FlowHolder()
         flow = FlowLayout(holder)
         flow.setContentsMargins(0, 0, 0, 0)
         bidx = set(cfg.buttons) if cfg else set()
@@ -548,8 +624,7 @@ class DevicesPage(QWidget):
             self.dl.addWidget(e)
         self.dl.addWidget(holder)
         self.dl.addStretch(1)
-        if dev is not None:
-            self.timer.start(40)
+        self._start_polling()
 
     def _set_kind(self, name: str, kind: str, art: DeviceArt) -> None:
         self.state.settings.device_kinds[name] = kind
@@ -557,14 +632,113 @@ class DevicesPage(QWidget):
         art.set_kind(kind, self.device is not None)
 
     # -- live -------------------------------------------------------------
+    def _follow_toggled(self, on: bool) -> None:
+        self.state.settings.follow_active_device = on
+        self.state.settings.save()
+
+    def _reset_banner(self) -> None:
+        if self.state.ws.devices:
+            txt = ("🎮  Appuyez sur un bouton ou bougez un axe : la commande s'illumine et son action "
+                   "s'affiche ici.")
+        else:
+            txt = "🎮  Aucun périphérique branché : branchez-le puis cliquez sur « Détecter »."
+        self.banner.setText(f"<span style='color:{theme.MUTED}'>{txt}</span>")
+
+    def _start_polling(self) -> None:
+        if self.state.ws.devices and self.isVisible() and not self.timer.isActive():
+            self.timer.start(40)
+
     def _poll(self) -> None:
-        if self.device is None or not self.isVisible():
+        if not self.isVisible():
+            self.timer.stop()
             return
-        st = self.device.poll()
-        for i, row in self.axis_rows.items():
-            row.set_value(st.axes[i] if st is not None and i < len(st.axes) else None)
-        for i, tile in self.tiles.items():
-            tile.set_pressed(bool(st is not None and st.pressed(i)))
+        now = time.monotonic()
+        for dev in self.state.ws.devices:
+            st = dev.poll()
+            if st is None:
+                continue
+            prev = self._prev.get(dev.id)
+            self._prev[dev.id] = st
+            if prev is None:
+                continue
+            newly = st.buttons & ~prev.buttons
+            moved = [i for i, (a, b) in enumerate(zip(st.axes, prev.axes)) if abs(a - b) > 0.015]
+            if newly or moved or st.buttons:
+                self._activity[dev.id] = now
+            if newly:
+                i = (newly & -newly).bit_length() - 1
+                self._on_input(dev, "button", i)
+            else:
+                # chapeau chinois : passage du centre à une direction
+                for i in (6, 7):
+                    if i < len(st.axes) and prev.axes[i] == 0 and st.axes[i] != 0:
+                        self._on_input(dev, "hat", i, st.axes[i])
+                        break
+                else:
+                    big = [i for i in moved if abs(st.axes[i] - prev.axes[i]) > 0.08 and i < 6]
+                    if big:
+                        self._on_input(dev, "axis", big[0], st.axes[big[0]], follow=False)
+        self._mark_active(now)
+        if self.device is not None:
+            # l'appareil affiché a pu changer pendant la boucle (suivi automatique)
+            st = self._prev.get(self.device.id)
+            for i, row in self.axis_rows.items():
+                row.set_value(st.axes[i] if st is not None and i < len(st.axes) else None)
+            for i, tile in self.tiles.items():
+                tile.set_pressed(bool(st is not None and st.pressed(i)))
+
+    def _on_input(self, dev: js.Device, typ: str, i: int, value: float = 0.0, follow: bool = True) -> None:
+        """Nouvelle commande reçue : bascule éventuelle et bandeau d'information."""
+        if follow and self.follow.isChecked() and (self.device is None or self.device.id != dev.id):
+            self._select_key(("device", dev.id))
+        cfg, _mode = self.state.ws.joy_lib.match(dev.name)
+        if typ == "button":
+            b = cfg.buttons.get(i) if cfg else None
+            what = f"Bouton {i}"
+            action = b.description() if b is not None and b.is_bound else ""
+            w = self.tiles.get(i) if self.device is not None and self.device.id == dev.id else None
+        else:
+            a = cfg.axes.get(i) if cfg else None
+            if typ == "hat":
+                what = f"Chapeau {'gauche/droite' if i == 6 else 'haut/bas'} ({'+' if value > 0 else '−'})"
+                vb = (a.high if value > 0 else a.low) if a is not None else None
+                action = vb.description() if vb is not None and vb.is_bound else (a.description() if a else "")
+            else:
+                what = f"Axe {i} ({js.AXIS_NAMES_WIN[i]})"
+                action = a.description() if a is not None and a.is_bound else ""
+            w = self.axis_rows.get(i) if self.device is not None and self.device.id == dev.id else None
+        if w is not None:
+            # différé : la page vient peut-être d'être reconstruite (bascule d'appareil)
+            QTimer.singleShot(0, lambda w=w: self._reveal(w))
+        if action:
+            act = f"<span style='color:{theme.GREEN}'><b>{action}</b></span>"
+        else:
+            act = f"<span style='color:{theme.AMBER}'>aucune action — cliquez pour en assigner une</span>"
+        self.banner.setText(f"🎮  <b>{dev.name}</b> — {what}  →  {act}")
+
+    def _reveal(self, w: QWidget) -> None:
+        try:
+            self.scroll.ensureWidgetVisible(w, 20, 40)
+        except RuntimeError:  # widget détruit entre-temps
+            pass
+
+    def _mark_active(self, now: float) -> None:
+        """Signale d'un point vert, dans la liste, les périphériques en cours d'utilisation."""
+        conn = self.tree.topLevelItem(0)
+        if conn is None:
+            return
+        for j in range(conn.childCount()):
+            it = conn.child(j)
+            d = it.data(0, Qt.UserRole)
+            if not d or d[0] != "device":
+                continue
+            active = now - self._activity.get(d[1], 0.0) < 0.4
+            if self._marked.get(d[1]) == active:
+                continue
+            self._marked[d[1]] = active
+            name = it.data(0, Qt.UserRole + 1) or it.text(0)
+            it.setData(0, Qt.UserRole + 1, name)
+            it.setText(0, ("●  " if active else "") + name)
 
     # -- édition -------------------------------------------------------------
     def _device_name(self) -> Optional[str]:
@@ -673,6 +847,7 @@ class DevicesPage(QWidget):
 
     def showEvent(self, ev) -> None:  # noqa: N802
         super().showEvent(ev)
-        if self.device is not None:
-            self.timer.start(40)
+        self._prev = {}
+        self._reset_banner()
+        self._start_polling()
 

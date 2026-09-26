@@ -26,6 +26,8 @@ class Settings:
     device_kinds: dict[str, str] = field(default_factory=dict)  # nom du périphérique -> type d'illustration
     search_all_joysticks: bool = False
     confirmed_root_write: bool = False
+    live_keys: bool = True  # illuminer les touches pressées sur le clavier dessiné
+    follow_active_device: bool = True  # afficher automatiquement le périphérique utilisé
     window_geometry: str = ""
 
     @classmethod

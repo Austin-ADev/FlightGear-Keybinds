@@ -4,12 +4,18 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtGui import QColor, QKeyEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QAbstractSpinBox,
+    QApplication,
     QButtonGroup,
+    QCheckBox,
     QFrame,
+    QLineEdit,
+    QPlainTextEdit,
+    QTextEdit,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -22,8 +28,9 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.keyboard import combo_label
-from ..core.layouts import LAYERS, PhysKey
+from ..core.layouts import LAYER_NAME, LAYERS, MODIFIER_KEY_IDS, PhysKey, live_layer, scancode_map
 from . import ops, theme
+from .capture import event_to_fg
 from .keyboard_widget import KeyboardWidget, Legend
 from .state import AppState
 
@@ -32,8 +39,11 @@ class KeyboardPage(QWidget):
     def __init__(self, state: AppState, parent=None):
         super().__init__(parent)
         self.state = state
-        self.layer = "none"
+        self.layer = "none"  # couche choisie par l'utilisateur
+        self.shown_layer = "none"  # couche affichée (peut suivre les modificateurs tenus)
         self.current_key: Optional[PhysKey] = None
+        self.held: set[str] = set()  # touches physiques enfoncées
+        self.scanmap: dict[int, str] = scancode_map(state.layout)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -58,7 +68,20 @@ class KeyboardPage(QWidget):
         self.ctx_label.setProperty("muted", True)
         top.addWidget(self.ctx_label)
         root.addLayout(top)
-        root.addWidget(Legend())
+        leg = QHBoxLayout()
+        leg.addWidget(Legend(), 1)
+        self.live = QCheckBox("Illuminer les touches pressées")
+        self.live.setToolTip("Quand cet onglet est affiché, les touches frappées au clavier s'illuminent et "
+                             "leur action s'affiche. Les modificateurs tenus (Maj, Ctrl, Alt, AltGr) "
+                             "affichent la couche correspondante.")
+        self.live.setChecked(state.settings.live_keys)
+        leg.addWidget(self.live)
+        root.addLayout(leg)
+        self.banner = QLabel()
+        self.banner.setTextFormat(Qt.RichText)
+        self.banner.setStyleSheet(f"background: {theme.CARD}; border: 1px solid {theme.BORDER};"
+                                  f" border-radius: 6px; padding: 7px 12px;")
+        root.addWidget(self.banner)
 
         split = QSplitter(Qt.Vertical)
         self.kbw = KeyboardWidget()
@@ -114,14 +137,126 @@ class KeyboardPage(QWidget):
         state.dataChanged.connect(self.refresh)
         state.layoutChanged.connect(self._layout_changed)
         state.navigateKey.connect(self.show_combo)
+        self.live.toggled.connect(self._live_toggled)
+        QApplication.instance().installEventFilter(self)
+        self._reset_banner()
         self.refresh()
 
     # ------------------------------------------------------------------
     def set_layer(self, lid: str) -> None:
         self.layer = lid
+        self._show_layer(lid)
+        self._select_layer_row(lid)
+
+    def _show_layer(self, lid: str) -> None:
+        self.shown_layer = lid
         self.layer_buttons[lid].setChecked(True)
         self.kbw.set_data(self.state.layout, self.state.keyboard, lid)
-        self._select_layer_row(lid)
+
+    # ------------------------------------------------------------------
+    # Illumination des touches pressées
+    # ------------------------------------------------------------------
+    def _live_toggled(self, on: bool) -> None:
+        self.state.settings.live_keys = on
+        self.state.settings.save()
+        if not on:
+            self._release_all()
+        self._reset_banner()
+
+    def _reset_banner(self) -> None:
+        if self.live.isChecked():
+            self.banner.setText(f"<span style='color:{theme.MUTED}'>⌨  Appuyez sur une touche de votre clavier : "
+                                "elle s'illumine ici et son action s'affiche. Maintenez Maj, Ctrl, Alt ou AltGr "
+                                "pour voir la couche correspondante.</span>")
+        else:
+            self.banner.setText(f"<span style='color:{theme.MUTED}'>Illumination des touches désactivée.</span>")
+
+    def _capturing(self) -> bool:
+        if not (self.live.isChecked() and self.isVisible() and self.window().isActiveWindow()):
+            return False
+        if QApplication.activeModalWidget() is not None or QApplication.activePopupWidget() is not None:
+            return False
+        fw = QApplication.focusWidget()
+        # ne pas voler la saisie d'un champ de texte (ex. filtre du sélecteur de contexte)
+        return not isinstance(fw, (QLineEdit, QPlainTextEdit, QTextEdit, QAbstractSpinBox))
+
+    def eventFilter(self, obj: QObject, ev: QEvent) -> bool:  # noqa: N802
+        t = ev.type()
+        if t in (QEvent.KeyPress, QEvent.KeyRelease):
+            if not obj.isWidgetType() or not self._capturing():
+                return False
+            if not ev.isAutoRepeat():
+                self.handle_key(ev, t == QEvent.KeyPress)
+            # Alt+F4 doit toujours pouvoir fermer la fenêtre
+            if ev.key() == Qt.Key_F4 and ev.modifiers() & Qt.AltModifier:
+                return False
+            return True
+        if t in (QEvent.ApplicationDeactivate, QEvent.WindowDeactivate) and self.held:
+            self._release_all()
+        return False
+
+    def hideEvent(self, ev) -> None:  # noqa: N802
+        self._release_all()
+        super().hideEvent(ev)
+
+    def _release_all(self) -> None:
+        self.held.clear()
+        self.kbw.set_pressed(set())
+        if self.shown_layer != self.layer:
+            self._show_layer(self.layer)
+
+    def key_id_for_event(self, ev: QKeyEvent) -> Optional[str]:
+        kid = self.scanmap.get(ev.nativeScanCode())
+        if kid is not None:
+            return kid
+        # repli (autre système, code inconnu) : via le caractère produit
+        r = event_to_fg(ev)
+        if r is None:
+            return None
+        lay = self.state.layout
+        found = lay.find_inputs(*r) or lay.find_code(r[0])
+        return found[0][0].id if found else None
+
+    def handle_key(self, ev: QKeyEvent, down: bool) -> None:
+        kid = self.key_id_for_event(ev)
+        if kid is None:
+            return
+        if down:
+            self.held.add(kid)
+        else:
+            self.held.discard(kid)
+        self.kbw.set_pressed(self.held)
+        target = live_layer(self.held & MODIFIER_KEY_IDS, self.state.layout.has_altgr) or self.layer
+        if target != self.shown_layer:
+            self._show_layer(target)
+        if down and kid not in MODIFIER_KEY_IDS:
+            k = self.state.layout.key(kid)
+            self.current_key = k
+            self.kbw.set_highlight(set())
+            self.kbw.set_selected(kid)
+            self._fill_detail()
+            self._select_layer_row(target)
+            self._announce(k, target)
+
+    def _announce(self, k: PhysKey, layer: str) -> None:
+        vis = self.kbw.visual(k.id)
+        name = k.display_name
+        if layer != "none":
+            name = f"{LAYER_NAME[layer]}+{name}"
+        if vis is None or vis.origin == "modifier":
+            self.banner.setText(f"<b>{name}</b>")
+            return
+        code = f"<span style='color:{theme.MUTED}'>code FlightGear {vis.code}</span>" if vis.code is not None else ""
+        if vis.action:
+            col = theme.ORIGIN_COLORS.get(vis.origin)
+            col = col.lighter(160).name() if col is not None else theme.TEXT
+            pre = "↺ par repli : " if vis.fallback else ""
+            txt = (f"⌨  <b>{name}</b>  →  <span style='color:{col}'><b>{pre}{vis.action}</b></span>"
+                   f"  ·  {vis.combo}  ·  {code}")
+        else:
+            txt = (f"⌨  <b>{name}</b>  →  <span style='color:{theme.GREEN}'>aucune action (combinaison libre)</span>"
+                   f"  ·  {code}")
+        self.banner.setText(txt)
 
     def refresh(self) -> None:
         self.ctx_label.setText(f"Contexte : {self.state.ws.context_label(self.state.context)}")
@@ -129,12 +264,16 @@ class KeyboardPage(QWidget):
         if self.layer == "altgr" and not self.state.layout.has_altgr:
             self.layer = "none"
             self.layer_buttons["none"].setChecked(True)
+        if self.shown_layer == "altgr" and not self.state.layout.has_altgr:
+            self.shown_layer = self.layer
         sel = self._selected()
-        self.kbw.set_data(self.state.layout, self.state.keyboard, self.layer)
+        self.kbw.set_data(self.state.layout, self.state.keyboard, self.shown_layer)
         self._fill_detail()
         self._select_layer_row(sel[2] if sel else self.layer)
 
     def _layout_changed(self) -> None:
+        self.scanmap = scancode_map(self.state.layout)
+        self._release_all()
         self.current_key = None
         self.kbw.set_selected(None)
         self.kbw.set_highlight(set())
@@ -160,7 +299,7 @@ class KeyboardPage(QWidget):
         self.current_key = self.state.layout.key(kid)
         self.kbw.set_highlight(set())
         self._fill_detail()
-        self._select_layer_row(self.layer)
+        self._select_layer_row(self.shown_layer)
 
     def _key_double(self, kid: str) -> None:
         self._key_clicked(kid)
@@ -205,7 +344,7 @@ class KeyboardPage(QWidget):
             if direct is not None and (direct.is_bound or direct.is_disabled):
                 action = direct.description() if direct.is_bound else "Désactivé pour cet aéronef"
                 origin = direct.origin
-            elif res.slot is not None and res.slot.is_bound and not res.fallback:
+            elif res.slot is not None and res.slot.is_bound and (not res.fallback or lid == "altgr"):
                 # majuscule / ponctuation : Maj fait partie du caractère produit
                 action = res.slot.description()
                 origin = res.slot.origin

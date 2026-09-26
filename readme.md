@@ -2,13 +2,14 @@
 
 Gestionnaire graphique des raccourcis clavier et des périphériques de jeu (joystick, HOTAS, yoke, palonnier, manette des gaz…) pour **FlightGear**, sans avoir à éditer de fichiers XML à la main.
 
-> **Version 0.1 bêta** — Windows 10/11. Faites une sauvegarde de vos configurations personnelles avant de commencer (l'outil crée aussi ses propres sauvegardes, voir plus bas).
+> **Version 0.1.1 bêta** — Windows 10/11. Faites une sauvegarde de vos configurations personnelles avant de commencer (l'outil crée aussi ses propres sauvegardes, voir plus bas).
 
 ## Fonctionnalités
 
 - **Clavier visuel** AZERTY (France) et QWERTY (États-Unis), plus QWERTY Royaume-Uni et QWERTZ Allemagne. Chaque touche affiche son action pour chaque combinaison de modificateurs (Normal, Maj, Ctrl, Alt, AltGr, Ctrl+Maj, Alt+Maj). La disposition du clavier Windows est détectée automatiquement.
 - **Fidèle au comportement de FlightGear** : l'outil reproduit la façon dont FlightGear fusionne les fichiers (global, aéronef, fichiers inclus) et résout les frappes. Exemple : sur AZERTY, `Maj+&` envoie `1` avec Maj, et `AltGr+(` retombe sur l'action de `[`.
 - **Périphériques** : détection des périphériques branchés (le même nom que celui lu par FlightGear), affichage en direct des axes et des boutons, et de la configuration réellement utilisée par FlightGear. L'outil n'est lié à aucun modèle : il lit toute la bibliothèque de FlightGear (Saitek/Logitech X52, Pro Flight Yoke et palonniers, Thrustmaster T.16000M, TWCS, Warthog, T-Rudder, CH, Honeycomb…) et crée une configuration pour tout périphérique inconnu.
+- **Touches et commandes illuminées en direct** : dans l'onglet Clavier, la touche que vous pressez s'illumine et son action s'affiche. En maintenant Maj, Ctrl, Alt ou AltGr, le clavier dessiné passe sur la couche correspondante. Le repérage se fait par position physique, quelle que soit la disposition. Dans l'onglet Périphériques, le bouton pressé s'illumine et l'axe en mouvement est mis en évidence. Si l'option est activée, l'appareil utilisé s'affiche automatiquement quand plusieurs sont branchés.
 - **Recherche** par touche (`ctrl+a`, `maj+F1`, ou capture directe d'une touche) ou par action (`train`, `volets`, `/controls/flight/flaps`…), sur le clavier et les périphériques.
 - **Aéronefs** : liste de la bibliothèque d'aéronefs, raccourcis propres à chaque aéronef (ajouts, remplacements, désactivations), **export / import de profils** (`.fgkb`, ou fichier clavier XML de FlightGear) et **copie de raccourcis d'un aéronef vers un autre**.
 - **Actions non assignées** : actions courantes de FlightGear (train, volets, trims, pilote automatique, vues, éclairage…) qui n'ont ni touche ni bouton, et liste des combinaisons libres. Assignation en deux clics.

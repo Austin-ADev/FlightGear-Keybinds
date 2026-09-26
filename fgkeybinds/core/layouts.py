@@ -361,6 +361,75 @@ def builtin_layouts() -> list[Layout]:
     ]
 
 
+# ---------------------------------------------------------------------------
+# Codes de balayage Windows (position physique des touches)
+# ---------------------------------------------------------------------------
+# Valeurs « set 1 » ; +0x100 pour les touches étendues (préfixe E0), comme les
+# renvoie Qt (QKeyEvent.nativeScanCode) sous Windows.
+
+_SCAN_COMMON: dict[int, str] = {
+    0x01: "ESC", 0x3B: "F1", 0x3C: "F2", 0x3D: "F3", 0x3E: "F4", 0x3F: "F5", 0x40: "F6", 0x41: "F7",
+    0x42: "F8", 0x43: "F9", 0x44: "F10", 0x57: "F11", 0x58: "F12",
+    0x137: "PRTSC", 0x54: "PRTSC", 0x46: "SCRLK", 0x45: "PAUSE", 0x145: "NUMLK",
+    0x0E: "BKSP", 0x0F: "TAB", 0x1C: "ENTER", 0x3A: "CAPS",
+    0x2A: "LSHIFT", 0x36: "RSHIFT", 0x136: "RSHIFT",
+    0x1D: "LCTRL", 0x11D: "RCTRL", 0x38: "LALT", 0x138: "RALT",
+    0x15B: "LWIN", 0x15C: "RWIN", 0x15D: "MENU", 0x39: "SPACE",
+    0x152: "INS", 0x147: "HOME", 0x149: "PGUP", 0x153: "DEL", 0x14F: "END", 0x151: "PGDN",
+    0x148: "UP", 0x14B: "LEFT", 0x150: "DOWN", 0x14D: "RIGHT",
+    0x135: "KPDIV", 0x37: "KPMUL", 0x4A: "KPSUB", 0x4E: "KPADD", 0x11C: "KPENT",
+    0x47: "KP7", 0x48: "KP8", 0x49: "KP9", 0x4B: "KP4", 0x4C: "KP5", 0x4D: "KP6",
+    0x4F: "KP1", 0x50: "KP2", 0x51: "KP3", 0x52: "KP0", 0x53: "KPDOT",
+}
+
+
+def scancode_map(layout: Layout) -> dict[int, str]:
+    """Code de balayage → identifiant de touche de la disposition."""
+    m = dict(_SCAN_COMMON)
+    m[0x29] = "E00"
+    for i in range(12):  # 1 … =
+        m[0x02 + i] = f"E{i + 1:02d}"
+    for i in range(12):  # rangée A Z E R T Y… / Q W E R T Y…
+        m[0x10 + i] = f"D{i:02d}"
+    for i in range(11):  # rangée Q S D F… / A S D F…
+        m[0x1E + i] = f"C{i:02d}"
+    if layout.variant == "iso":
+        m[0x2B] = "C11"  # touche à gauche d'Entrée (« * » en AZERTY, « # » en UK)
+        m[0x56] = "B00"  # touche supplémentaire ISO (« < »)
+        for i in range(10):
+            m[0x2C + i] = f"B{i + 1:02d}"
+    else:
+        m[0x2B] = "D12"  # « \ » au-dessus d'Entrée
+        for i in range(10):
+            m[0x2C + i] = f"B{i:02d}"
+    ids = {k.id for k in layout.keys}
+    return {sc: kid for sc, kid in m.items() if kid in ids}
+
+
+MODIFIER_KEY_IDS = {"LSHIFT", "RSHIFT", "LCTRL", "RCTRL", "LALT", "RALT", "LWIN", "RWIN"}
+
+
+def live_layer(held: set[str], has_altgr: bool) -> Optional[str]:
+    """Couche correspondant aux modificateurs physiquement enfoncés (None si aucun)."""
+    shift = bool(held & {"LSHIFT", "RSHIFT"})
+    altgr = has_altgr and "RALT" in held
+    alt = "LALT" in held or ("RALT" in held and not has_altgr)
+    ctrl = bool(held & {"LCTRL", "RCTRL"})
+    if altgr:
+        return "altgr"  # Windows ajoute un faux Ctrl gauche à AltGr
+    if ctrl and shift:
+        return "ctrl+shift"
+    if alt and shift:
+        return "alt+shift"
+    if ctrl:
+        return "ctrl"
+    if alt:
+        return "alt"
+    if shift:
+        return "shift"
+    return None
+
+
 def load_user_layouts(folder: Path) -> list[Layout]:
     """Charge des dispositions JSON : même format que les tables ci-dessus.
 
