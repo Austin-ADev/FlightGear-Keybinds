@@ -1,4 +1,4 @@
-"""Point d'entrée métier : état chargé et opérations d'écriture."""
+"""Business entry point: loaded state and write operations."""
 
 from __future__ import annotations
 

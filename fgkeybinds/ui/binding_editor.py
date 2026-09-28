@@ -1,4 +1,4 @@
-"""Éditeur d'assignation : choix dans le catalogue, formulaire guidé ou XML brut."""
+"""Assignment editor: catalog selection, guided form, or raw XML."""
 
 from __future__ import annotations
 
@@ -38,18 +38,18 @@ from . import theme
 
 COMMANDS: list[tuple[str, str]] = [
     ("nasal", "Script Nasal"),
-    ("property-toggle", "Basculer une propriété (vrai/faux)"),
-    ("property-assign", "Affecter une valeur à une propriété"),
-    ("property-adjust", "Incrémenter / décrémenter une propriété"),
-    ("property-cycle", "Parcourir une liste de valeurs"),
-    ("property-scale", "Recopier l'axe dans une propriété"),
-    ("dialog-show", "Ouvrir une fenêtre"),
+    ("property-toggle", "Toggle a property (true/false)"),
+    ("property-assign", "Assign a value to a property"),
+    ("property-adjust", "Increment / decrement a property"),
+    ("property-cycle", "Browse a list of values"),
+    ("property-scale", "Copy the axis into a property"),
+    ("dialog-show", "Open a window"),
     ("pause", "Pause"),
-    ("screen-capture", "Capture d'écran"),
-    ("toggle-fullscreen", "Plein écran"),
-    ("replay", "Rejeu"),
-    ("reset", "Réinitialiser"),
-    ("null", "Aucune action (désactiver)"),
+    ("screen-capture", "Screenshot"),
+    ("toggle-fullscreen", "Full Screen"),
+    ("replay", "Replay"),
+    ("reset", "Reset"),
+    ("null", "No action (disable)"),
 ]
 
 FIELDS_BY_CMD: dict[str, list[str]] = {
@@ -63,18 +63,18 @@ FIELDS_BY_CMD: dict[str, list[str]] = {
 }
 
 FIELD_LABELS = {
-    "property": "Propriété",
-    "property2": "Copier depuis la propriété",
-    "value": "Valeur",
-    "step": "Pas",
+    "property": "Property",
+    "property2": "Copy from property",
+    "value": "Value",
+    "step": "Step",
     "min": "Minimum",
     "max": "Maximum",
-    "wrap": "Boucler (min ↔ max)",
-    "values": "Valeurs (séparées par ;)",
-    "offset": "Décalage",
-    "factor": "Facteur",
-    "power": "Puissance (entier)",
-    "dialog-name": "Nom de la fenêtre",
+    "wrap": "Wrap (min ↔ max)",
+    "values": "Values (separated by ;)",
+    "offset": "Offset",
+    "factor": "Factor",
+    "power": "Power (integer)",
+    "dialog-name": "Window Name",
     "script": "Script",
 }
 
@@ -100,7 +100,7 @@ def _xml(el: etree._Element) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Formulaire d'un binding
+# Binding form
 # ---------------------------------------------------------------------------
 
 class BindingForm(QWidget):
@@ -233,7 +233,7 @@ class BindingForm(QWidget):
             c = etree.Element("command")
             el.insert(0, c)
         c.text = cmd
-        # retire les champs gérés qui ne s'appliquent pas à la commande
+        # removes managed fields that do not apply to the order
         for tag in _MANAGED - {"command"}:
             for e in el.findall(tag):
                 el.remove(e)
@@ -265,7 +265,7 @@ class BindingForm(QWidget):
 
 
 # ---------------------------------------------------------------------------
-# Liste de bindings
+# List of bindings
 # ---------------------------------------------------------------------------
 
 class BindingListEditor(QWidget):
@@ -277,13 +277,13 @@ class BindingListEditor(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 6, 0, 0)
         bar = QHBoxLayout()
-        self.btn_add = QPushButton("＋ Ajouter")
-        self.btn_del = QPushButton("Supprimer")
+        self.btn_add = QPushButton("＋ Add")
+        self.btn_del = QPushButton("Delete")
         self.btn_up = QPushButton("↑")
         self.btn_down = QPushButton("↓")
         self.btn_xml = QPushButton("XML")
         self.btn_xml.setCheckable(True)
-        self.btn_xml.setToolTip("Modifier directement le XML des bindings")
+        self.btn_xml.setToolTip("Directly edit the binding XML")
         for b in (self.btn_add, self.btn_del, self.btn_up, self.btn_down):
             bar.addWidget(b)
         bar.addStretch(1)
@@ -348,11 +348,11 @@ class BindingListEditor(QWidget):
         for e in self.elements:
             cmd = (e.findtext("command") or "").strip()
             if not cmd:
-                return "Un binding n'a pas de commande."
+                return "A binding has no command."
             if cmd.startswith("property-") and not (e.findtext("property") or "").strip():
-                return f"La commande « {cmd} » nécessite une propriété."
+                return f"The order « {cmd} » requires a property."
             if cmd == "nasal" and not (e.findtext("script") or "").strip():
-                return "Le script Nasal est vide."
+                return "The Nasal script is empty."
         return None
 
     def _parse_xml_view(self) -> None:
@@ -364,10 +364,10 @@ class BindingListEditor(QWidget):
             root = etree.fromstring(("<r>" + txt + "</r>").encode("utf-8"),
                                     etree.XMLParser(strip_cdata=False, remove_blank_text=True))
         except etree.XMLSyntaxError as e:
-            raise ValueError(f"XML invalide : {e}") from e
+            raise ValueError(f"Invalid XML : {e}") from e
         els = [c for c in root if isinstance(c.tag, str)]
         if any(c.tag != "binding" for c in els):
-            raise ValueError("Seuls des éléments <binding> sont acceptés.")
+            raise ValueError("Only <binding> elements are accepted.")
         self.elements = els
 
     def _toggle_xml(self, on: bool) -> None:
@@ -380,7 +380,7 @@ class BindingListEditor(QWidget):
             try:
                 self._parse_xml_view()
             except ValueError as e:
-                QMessageBox.warning(self, "XML invalide", str(e))
+                QMessageBox.warning(self, "Invalid XML", str(e))
                 self.btn_xml.blockSignals(True)
                 self.btn_xml.setChecked(True)
                 self.btn_xml.blockSignals(False)
@@ -397,7 +397,7 @@ class BindingListEditor(QWidget):
             try:
                 txt = summarize(binding_from_xml(_xml(e)), 70)
             except Exception:
-                txt = "(binding invalide)"
+                txt = "(invalid binding)"
             self.list.addItem(QListWidgetItem(txt))
         self.list.blockSignals(False)
         if 0 <= select < len(self.elements):
@@ -519,9 +519,9 @@ class BindingEditorDialog(QDialog):
         rl.setContentsMargins(8, 8, 0, 0)
         form = QFormLayout()
         self.desc = QLineEdit(desc)
-        self.desc.setPlaceholderText("Description affichée dans l'aide de FlightGear")
+        self.desc.setPlaceholderText("Description displayed in the FlightGear help")
         form.addRow("Description", self.desc)
-        self.repeat = QCheckBox("Répéter tant que la touche / le bouton est maintenu")
+        self.repeat = QCheckBox("Repeat while the key / button is held")
         self.repeat.setChecked(repeatable)
         self.repeat.setVisible(allow_repeat)
         form.addRow("", self.repeat)
@@ -530,9 +530,9 @@ class BindingEditorDialog(QDialog):
         self.press_ed = BindingListEditor(sorted(props))
         self.release_ed = BindingListEditor(sorted(props))
         self.press_ed.set_empty_hint("")
-        self.tabs.addTab(self.press_ed, "Mouvement de l'axe" if kind == "axis" else "À l'appui")
+        self.tabs.addTab(self.press_ed, "Axis movement" if kind == "axis" else "In support")
         if allow_release:
-            self.tabs.addTab(self.release_ed, "Au relâchement")
+            self.tabs.addTab(self.release_ed, "Upon release")
         rl.addWidget(self.tabs, 1)
         split.addWidget(right)
         split.setSizes([330, 750])
@@ -544,7 +544,7 @@ class BindingEditorDialog(QDialog):
         bb.addButton(self.btn_clear, QDialogButtonBox.ResetRole)
         self.btn_ok = bb.addButton("Enregistrer", QDialogButtonBox.AcceptRole)
         self.btn_ok.setProperty("primary", True)
-        bb.addButton("Annuler", QDialogButtonBox.RejectRole)
+        bb.addButton("Cancel", QDialogButtonBox.RejectRole)
         root.addWidget(bb)
 
         self.press_ed.set_bindings(press or [])

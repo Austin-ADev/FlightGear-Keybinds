@@ -1,4 +1,4 @@
-"""Thème sombre « cockpit » de l'application."""
+""""Cockpit" dark theme for the application."""
 
 from __future__ import annotations
 

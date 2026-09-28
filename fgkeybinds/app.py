@@ -1,4 +1,4 @@
-"""Point d'entrée de l'application graphique."""
+"""Entry point of the graphical application."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def main() -> int:
     def excepthook(etype, value, tb):
         text = "".join(traceback.format_exception(etype, value, tb))
         sys.__stderr__ and sys.__stderr__.write(text)
-        QMessageBox.critical(None, "Erreur inattendue", f"{value}\n\n{text[-2500:]}")
+        QMessageBox.critical(None, "Unexpected Error", f"{value}\n\n{text[-2500:]}")
 
     sys.excepthook = excepthook
 

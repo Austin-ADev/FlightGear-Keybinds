@@ -98,7 +98,7 @@ class SettingsDialog(QDialog):
         bb = QDialogButtonBox()
         ok = bb.addButton("Enregistrer et recharger", QDialogButtonBox.AcceptRole)
         ok.setProperty("primary", True)
-        bb.addButton("Annuler", QDialogButtonBox.RejectRole)
+        bb.addButton("Cancel", QDialogButtonBox.RejectRole)
         lay.addWidget(bb)
         b_add.clicked.connect(self._add)
         b_del.clicked.connect(lambda: [self.dirs.takeItem(self.dirs.row(i)) for i in self.dirs.selectedItems()])

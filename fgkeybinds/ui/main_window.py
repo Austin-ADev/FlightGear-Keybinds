@@ -1,4 +1,4 @@
-"""Fenêtre principale."""
+"""Main window."""
 
 from __future__ import annotations
 
@@ -53,8 +53,8 @@ class MainWindow(QMainWindow):
         self.ctx_combo.setEditable(True)
         self.ctx_combo.setInsertPolicy(QComboBox.NoInsert)
         self.ctx_combo.setMinimumWidth(380)
-        self.ctx_combo.setToolTip("Configuration affichée : globale ou propre à un aéronef "
-                                  "(tapez pour filtrer)")
+        self.ctx_combo.setToolTip("Displayed configuration: global or aircraft-specific "
+                                  "(type to filter)")
         self.ctx_combo.completer().setFilterMode(Qt.MatchContains)
         self.ctx_combo.completer().setCompletionMode(QCompleter.PopupCompletion)
         tb.addWidget(self.ctx_combo)

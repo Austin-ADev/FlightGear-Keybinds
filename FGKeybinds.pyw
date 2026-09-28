@@ -1,4 +1,4 @@
-"""Lanceur de FGKeybinds (double-clic sous Windows, ou point d'entrée PyInstaller)."""
+"""FGKeybinds launcher (double-click on Windows, or PyInstaller entry point)."""
 
 import sys
 

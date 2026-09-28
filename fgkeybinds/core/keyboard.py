@@ -1,4 +1,4 @@
-"""Modèle de la configuration clavier de FlightGear.
+"""FlightGear keyboard layout model.
 
 Un *slot* correspond à une touche (code FlightGear) combinée à un masque de
 modificateurs.  Chaque slot contient les bindings d'appui et de relâchement

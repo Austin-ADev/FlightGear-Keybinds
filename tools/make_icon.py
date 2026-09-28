@@ -1,4 +1,4 @@
-"""Génère build/fgkeybinds.ico (plusieurs tailles, images PNG) à partir de l'icône dessinée par Qt."""
+"""Generates build/fgkeybinds.ico (multiple sizes, PNG images) from the icon drawn by Qt."""
 
 import os
 import struct

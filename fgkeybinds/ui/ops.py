@@ -40,7 +40,7 @@ def confirm_global_write(parent: QWidget, state: AppState) -> bool:
     box.setCheckBox(cb)
     box.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
     box.button(QMessageBox.Ok).setText("Continuer")
-    box.button(QMessageBox.Cancel).setText("Annuler")
+    box.button(QMessageBox.Cancel).setText("Cancel")
     box.exec()
     if box.clickedButton() is not box.button(QMessageBox.Ok):
         return False

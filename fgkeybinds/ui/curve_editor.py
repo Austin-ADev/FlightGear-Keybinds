@@ -176,7 +176,7 @@ class CurveDialog(QDialog):
         reset = bb.addButton("Linéaire", QDialogButtonBox.ResetRole)
         ok = bb.addButton("Appliquer", QDialogButtonBox.AcceptRole)
         ok.setProperty("primary", True)
-        bb.addButton("Annuler", QDialogButtonBox.RejectRole)
+        bb.addButton("Cancel", QDialogButtonBox.RejectRole)
         root.addWidget(bb)
         reset.clicked.connect(self._reset)
         bb.accepted.connect(self.accept)

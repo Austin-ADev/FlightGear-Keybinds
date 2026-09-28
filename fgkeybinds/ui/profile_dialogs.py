@@ -1,4 +1,4 @@
-"""Dialogues d'export, d'import et de copie de profils."""
+"""Profile export, import, and copy dialogs."""
 
 from __future__ import annotations
 
@@ -81,26 +81,26 @@ class ExportDialog(QDialog):
         scope = QWidget()
         sl = QVBoxLayout(scope)
         sl.setContentsMargins(0, 0, 0, 0)
-        self.only_specific = QRadioButton("Uniquement les raccourcis propres à cet aéronef")
-        self.all_effective = QRadioButton("Tous les raccourcis effectifs (global + aéronef)")
+        self.only_specific = QRadioButton("Only the shortcuts specific to this aircraft")
+        self.all_effective = QRadioButton("All effective shortcuts (global + aircraft)")
         if ctx.is_global:
             self.only_specific.setEnabled(False)
             self.all_effective.setChecked(True)
-            self.all_effective.setText("Tous les raccourcis globaux")
+            self.all_effective.setText("All global shortcuts")
         else:
             self.only_specific.setChecked(True)
         sl.addWidget(self.only_specific)
         sl.addWidget(self.all_effective)
         form.addRow("Contenu clavier", scope)
-        self.with_js = QCheckBox("Inclure les configurations des périphériques branchés")
+        self.with_js = QCheckBox("Include configurations for connected devices")
         self.with_js.setChecked(bool(state.ws.joystick_configs_for_bindings()))
         self.with_js.setEnabled(bool(state.ws.joystick_configs_for_bindings()))
         form.addRow("Périphériques", self.with_js)
         fmt = QWidget()
         fl = QVBoxLayout(fmt)
         fl.setContentsMargins(0, 0, 0, 0)
-        self.fmt_json = QRadioButton("Profil FGKeybinds (.fgkb) — clavier et périphériques, réimportable")
-        self.fmt_xml = QRadioButton("Fichier clavier FlightGear (.xml) — utilisable directement dans un aéronef")
+        self.fmt_json = QRadioButton("FGKeybinds profile (.fgkb) — keyboard and peripherals, re-importable")
+        self.fmt_xml = QRadioButton("FlightGear keyboard file (.xml) — usable directly in an aircraft")
         self.fmt_json.setChecked(True)
         fl.addWidget(self.fmt_json)
         fl.addWidget(self.fmt_xml)
@@ -112,7 +112,7 @@ class ExportDialog(QDialog):
         bb = QDialogButtonBox()
         ok = bb.addButton("Exporter…", QDialogButtonBox.AcceptRole)
         ok.setProperty("primary", True)
-        bb.addButton("Annuler", QDialogButtonBox.RejectRole)
+        bb.addButton("Cancel", QDialogButtonBox.RejectRole)
         lay.addWidget(bb)
         bb.accepted.connect(self._export)
         bb.rejected.connect(self.reject)
@@ -129,15 +129,15 @@ class ExportDialog(QDialog):
         self.with_js.setEnabled(self.fmt_json.isChecked() and bool(self.state.ws.joystick_configs_for_bindings()))
         txt = f"{n} combinaison(s) de touches"
         if js and self.fmt_json.isChecked():
-            txt += f", {js} configuration(s) de périphérique"
+            txt += f", {js} device configuration(s)"
         self.summary.setText(txt + ".")
 
     def _export(self) -> None:
         entries = self._entries()
-        base = "".join(c if c.isalnum() or c in "-_ " else "_" for c in self.name.text()).strip() or "profil"
+        base = "".join(c if c.isalnum() or c in "-_ " else "_" for c in self.name.text()).strip() or "profile"
         if self.fmt_json.isChecked():
-            path, _ = QFileDialog.getSaveFileName(self, "Exporter le profil", base + ".fgkb",
-                                                  "Profil FGKeybinds (*.fgkb)")
+            path, _ = QFileDialog.getSaveFileName(self, "Export profile", base + ".fgkb",
+                                                  "FGKeybinds Profile (*.fgkb)")
             if not path:
                 return
             joys = []
@@ -153,11 +153,11 @@ class ExportDialog(QDialog):
                 src.update({"aircraft": v.id if v else "", "set_file": str(self.ctx.set_file)})
             save_profile(Profile(self.name.text(), entries, joys, src), Path(path))
         else:
-            path, _ = QFileDialog.getSaveFileName(self, "Exporter le fichier clavier", base + "-keyboard.xml",
-                                                  "Fichier XML FlightGear (*.xml)")
+            path, _ = QFileDialog.getSaveFileName(self, "Export keyboard file", base + "-keyboard.xml",
+                                                  "FlightGear XML File (*.xml)")
             if not path:
                 return
-            Path(path).write_text(keyboard_xml(entries, f"Exporté par FGKeybinds : {self.name.text()}"),
+            Path(path).write_text(keyboard_xml(entries, f"Exported by FGKeybinds : {self.name.text()}"),
                                   encoding="utf-8")
         self.state.status.emit(f"Profil exporté : {path}")
         self.accept()
@@ -168,7 +168,7 @@ class ExportDialog(QDialog):
 # ---------------------------------------------------------------------------
 
 class ImportDialog(QDialog):
-    """Sélection des entrées d'un profil puis application à un contexte cible."""
+    """Selection of profile entries followed by application to a target context."""
 
     def __init__(self, parent, state: AppState, profile: Profile, target: Optional[Context] = None,
                  title: str = "Importer un profil", exclude: Optional[Context] = None):
@@ -181,12 +181,12 @@ class ImportDialog(QDialog):
         h = QLabel(title)
         h.setProperty("heading", True)
         lay.addWidget(h)
-        src = QLabel(f"Profil : <b>{profile.name}</b> — {len(profile.keyboard)} combinaison(s), "
-                     f"{len(profile.joysticks)} périphérique(s)")
+        src = QLabel(f"Profil : <b>{profile.name}</b> — {len(profile.keyboard)} combination(s), "
+                     f"{len(profile.joysticks)} peripheral(s)")
         src.setTextFormat(Qt.RichText)
         lay.addWidget(src)
         tl = QHBoxLayout()
-        tl.addWidget(QLabel("Appliquer à :"))
+        tl.addWidget(QLabel("Apply to :"))
         self.target = context_combo(state, True, exclude)
         if target is not None:
             i = self.target.findData(target.key)
@@ -229,7 +229,7 @@ class ImportDialog(QDialog):
         bb = QDialogButtonBox()
         ok = bb.addButton("Appliquer", QDialogButtonBox.AcceptRole)
         ok.setProperty("primary", True)
-        bb.addButton("Annuler", QDialogButtonBox.RejectRole)
+        bb.addButton("Cancel", QDialogButtonBox.RejectRole)
         lay.addWidget(bb)
         bb.accepted.connect(self._apply)
         bb.rejected.connect(self.reject)

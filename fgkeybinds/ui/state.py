@@ -1,4 +1,4 @@
-"""État partagé entre les pages de l'interface."""
+"""State shared between interface pages."""
 
 from __future__ import annotations
 
@@ -78,9 +78,9 @@ class AppState(QObject):
 
     def after_write(self, path: Optional[Path] = None) -> None:
         self.dataChanged.emit()
-        msg = f"Enregistré : {path}" if path else "Modifications enregistrées."
+        msg = f"Enregistré : {path}" if path else "Changes saved."
         if fg_running():
-            msg += "  —  FlightGear est lancé : redémarrez-le pour appliquer les changements."
+            msg += "  —  FlightGear has been launched: restart it to apply the changes."
         self.status.emit(msg)
 
 
